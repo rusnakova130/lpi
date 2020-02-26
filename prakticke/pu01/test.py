@@ -1047,7 +1047,7 @@ def parseTheory(s: str) -> Theory:
   return [
     parseClause(l)
       for l in s.upper().replace('¬', ' -').replace('∨', ' ').split('\n')
-        if not re.match(r'^\s*$',l)
+        if (not re.match(r'^\s*$',l) and not re.match(r'^\s*c',l))
   ]
 def theoryLiterals(cls : Theory) -> FrozenSet[str]: return frozenset().union(*cls)
 def unknownLiterals(c : Clause, problem) -> List[str]:
@@ -1104,16 +1104,23 @@ def printColor(s : str, ansi : str, idle : str) -> None:
 
 def printGreen(s : str) -> None: printColor(s, '\033[32m', 'STRING')
 def printRed(s : str) -> None: printColor(s, '\033[31m', 'COMMENT')
+# ✕ ✖ ❌
+def printPass() -> None: printGreen('✓')
+def printFail() -> None: printRed('✕')
 
-def printResult(problem, res):
+def printResult(problem, res, errorUnsat):
+  ret = True
   sat, fails = res
+  if errorUnsat and not sat:
+    printFail()
+    print("  teória je nesplniteľná")
+    return False
+
   for name, f, check in zip(problem['ts'], fails, problem['cs']):
-    ok = f == True
-    # ✕ ✖	❌
-    okS = '✓' if ok else '✕' # type: str
-    print()
-    if ok: printGreen(okS)
-    else: printRed(okS)
+    ok = f == True # type: bool
+    ret = ret and ok
+    printStatus = printPass if ok else printFail
+    printStatus()
     print(' %s' % (name,))
     if f != True:
       if check == 'eq':
@@ -1121,19 +1128,33 @@ def printResult(problem, res):
       else:
         print("    Nie je splnené v ohodnotení")
       print("      %s" % (formatInterpretation(f)))
+    print()
 
-def testTheory(problem, fileName):
+  return ret
+
+def testTheory(problem, fileName, errorUnsat = True):
   print('Testing %s' % (fileName,))
+  print()
   try:
     t = readTheory(fileName)
+    unknownLits = unknownLiterals(theoryLiterals(t), problem)
+    if unknownLits:
+      printFail()
+      print('  Neznáme literály: %s' % ', '.join(unknownLits))
+      return
     res = checkTheory(problem, t)
-    printResult(problem, res)
+    return printResult(problem, res, errorUnsat)
   except FileNotFoundError:
-    print('  %s not found' % (fileName))
+    printFail()
+    print(' %s not found' % (fileName))
+    return False
 
 print()
-testTheory(spyTheoryProblem, 'spyTheory.txt')
+okT = testTheory(spyTheoryProblem, 'spyTheory.txt')
 print()
 print()
-testTheory(spyGoalProblem, 'spyGoal.txt')
+okG = testTheory(spyGoalProblem, 'spyGoal.txt', errorUnsat = False)
 print()
+
+if not (okT and okG):
+  sys.exit(1)
